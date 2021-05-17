@@ -1,5 +1,5 @@
 #include "my_malloc.h"
-
+// Hi
 /* Malloc and free of version with and without lock */
 void * ts_malloc_lock(size_t size){
   assert(pthread_mutex_lock(&lock) == 0);
