@@ -1,8 +1,6 @@
-## HW2: Malloc Library Part 2
--Student Name: Meihong Ge
--Student ID: mg476
+## Analysis of result
 ### Organization of Report 
-The report is divided into two chuncks, where I discuss the design process as well as some unique implementation detials in the First Part, and the result I acquired as well as my analysis towards it.
+The report is divided into three main sections, where I discuss the design process as well as some unique implementation detials in the First Section, the result I acquired as well as my analysis towards it in the Second Section, and comparison to the glibc version of malloc & source code analysis of it. 
 ### 1. Implementation Overview
 #### 1.1 Locking version Implementation
 The locking version is reletively straight forward. The core datastructure in the design of this malloc library is the free list. To make it thread safe, everytime a modification is made to the free list should be protected by a lock. Since most function involes altering the list, namely insert/merge/remove list, my design is to put lock right outside the interface method `myMalloc()`.
@@ -65,5 +63,45 @@ Based on the result, no lock version is five times faster than locking version. 
 
 Based on the results, there is no evident difference between two versions on the data segment size. Since the load are expected to distribute to different thread and thread count is the same for both version. We can imagine that version1's free list can be formed by connecting all free list from version2, which, should have similar data segment size performance.
 
-### 3 Conclusion
-In conclusion, we can see that using Thread Local Storage is better compared to the naive locking version. This is proven by the significant speed up and similar data segment size.
+### 3 Glibc version of malloc/free(used in Most Opreating System)
+To further explore this topic, I decided to look into the source code of the malloc/free library used to do memory management in real operating system. I started by running some test using this particular malloc/free. It turns out the result is much better than I expected:
+|Version|Locking|No Lock|Glibc|
+|:-|:-|:-|:-|
+|Average Time Took|1.478|0.303|0.027|
+|Average Segment Size(Bytes)|42470634|42515722|135168|
+
+At that time my understanding of the standard malloc/free library is that it do not differ much from our implementation. That is, we all used a list sturcture to manage the memory, used some traversing algorithm to find the fitting block to assign. The only two difference that I could think of is the actual malloc uses `mmap` instead of `sbrk` when the size required exceed certain threshold and maybe some difference in how the thread-safe portion is implemented. But it turns out the difference is actually huge.
+
+According to Doug Lea, the person who wrote this version of malloc/free. There are several goals to meet when designing a good memory management library:
+__1. Maximizing Compatibility:__
+
+An allocator should be plug-compatible with others; in particular it should obey ANSI/POSIX conventions.
+
+
+__2. Maximizing Portability:__
+
+Reliance on as few system-dependent features (such as system calls) as possible, while still providing optional support for other useful features found only on some systems; conformance to all known system constraints on alignment and addressing rules.
+
+
+__3. Minimizing Space:__
+
+The allocator should not waste space: It should obtain as little memory from the system as possible, and should maintain memory in ways that minimize fragmentation -- ``holes''in contiguous chunks of memory that are not used by the program.
+
+__4. Minimizing Time:__
+
+The malloc(), free() and realloc routines should be as fast as possible in the average case.
+
+__5. Maximizing Tunability:__
+Optional features and behavior should be controllable by users either statically (via #define and the like) or dynamically (via control commands such as mallopt).
+
+__6. Maximizing Locality:__
+
+Allocating chunks of memory that are typically used together near each other. This helps minimize page and cache misses during program execution.
+
+__7. Maximizing Error Detection:__
+
+It does not seem possible for a general-purpose allocator to also serve as general-purpose memory error testing tool such as Purify. However, allocators should provide some means for detecting corruption due to overwriting memory, multiple frees, and so on.
+
+__8. Minimizing Anomalies:__
+
+An allocator configured using default settings should perform well across a wide range of real loads that depend heavily on dynamic allocation -- windowing toolkits, GUI applications, compilers, interpretors, development tools, network (packet)-intensive programs, graphics-intensive packages, web browsers, string-processing applications, and so on.
