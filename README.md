@@ -1,8 +1,8 @@
-## Analysis of result
-### Organization of Report 
+## __Analysis of result__
+### __Organization of Report__ 
 The report is divided into three main sections, where I discuss the design process as well as some unique implementation detials in the First Section, the result I acquired as well as my analysis towards it in the Second Section, and comparison to the glibc version of malloc & source code analysis of it. 
-### 1. Implementation Overview
-#### 1.1 Locking version Implementation
+### __1. Implementation Overview__
+#### __1.1 Locking version Implementation__
 The locking version is reletively straight forward. The core datastructure in the design of this malloc library is the free list. To make it thread safe, everytime a modification is made to the free list should be protected by a lock. Since most function involes altering the list, namely insert/merge/remove list, my design is to put lock right outside the interface method `myMalloc()`.
 ```C
 void * ts_malloc_lock(size_t size){
@@ -20,7 +20,7 @@ void ts_free_lock(void * ptr){
   assert(pthread_mutex_unlock(&lock) == 0);
 }
 ```
-#### 1.2 No-lock version Implementation
+#### __1.2 No-lock version Implementation__
 No lock version utilize Thread-Local Storage, which means each thread will have a seperate free list. This would eliminate most of our need to lock the body of malloc. The only portion left unprotected would be `sbrk()`system call so we simply lock it and it should be thread safe.
 
 To make the free list thred safe, a very simple solution woule be to make free list's head and tail to a thread-local variable since they are foundation of a free list. 
@@ -46,9 +46,9 @@ void ts_free_nolock(void * ptr){
   myFree(ptr, &head_tls, &tail_tls);
 }
 ```
-#### 1.3 Other Non-critical Sections
+#### __1.3 Other Non-critical Sections__
 Other than the changes mentioned above, all the other portion of the code is left unchanged. Since part2 only consider best-fit, first-fit function is removed and corresponding branch in `myMalloc()` is removed.
-### 2 Result and Analysis
+### __2 Result and Analysis__
 I runned the test 10 times for each version. The result is as follows:
 |Version|Locking|No Lock|
 |:-|:-|:-|
@@ -58,12 +58,14 @@ I runned the test 10 times for each version. The result is as follows:
 |Average Segment Size(Bytes)|42470634|42515722|
 |Maximum Segment Size(Bytes)|42471920|42534134|
 |Minimum Segment Size(Bytes)|42468012|42496432|
-#### 2.1 Result Analysis
+
+#### __2.1 Result Analysis__
 Based on the result, no lock version is five times faster than locking version. This significant speed up is due to the fact that we are no locking all portion of the code but rather having each thread operate on different free list so they can happen concurrently. As for locking version, all threads share one singly free list, a reletively lone free list would make it harder to find the best fit free block. 
 
 Based on the results, there is no evident difference between two versions on the data segment size. Since the load are expected to distribute to different thread and thread count is the same for both version. We can imagine that version1's free list can be formed by connecting all free list from version2, which, should have similar data segment size performance.
 
-### 3 Glibc version of malloc/free(used in Most Opreating System)
+### __3 Glibc version of malloc/free(used in Most Opreating System)__
+#### __3.1 Basic Performance Metrics of standard library malloc/free__
 To further explore this topic, I decided to look into the source code of the malloc/free library used to do memory management in real operating system. I started by running some test using this particular malloc/free. It turns out the result is much better than I expected:
 |Version|Locking|No Lock|Glibc|
 |:-|:-|:-|:-|
@@ -72,36 +74,70 @@ To further explore this topic, I decided to look into the source code of the mal
 
 At that time my understanding of the standard malloc/free library is that it do not differ much from our implementation. That is, we all used a list sturcture to manage the memory, used some traversing algorithm to find the fitting block to assign. The only two difference that I could think of is the actual malloc uses `mmap` instead of `sbrk` when the size required exceed certain threshold and maybe some difference in how the thread-safe portion is implemented. But it turns out the difference is actually huge.
 
+#### __3.2 Basic design Goals__
 According to Doug Lea, the person who wrote this version of malloc/free. There are several goals to meet when designing a good memory management library:
-__1. Maximizing Compatibility:__
+
+_1. Maximizing Compatibility:_
 
 An allocator should be plug-compatible with others; in particular it should obey ANSI/POSIX conventions.
 
 
-__2. Maximizing Portability:__
+_2. Maximizing Portability:_
 
 Reliance on as few system-dependent features (such as system calls) as possible, while still providing optional support for other useful features found only on some systems; conformance to all known system constraints on alignment and addressing rules.
 
-
-__3. Minimizing Space:__
+_3. Minimizing Space:_
 
 The allocator should not waste space: It should obtain as little memory from the system as possible, and should maintain memory in ways that minimize fragmentation -- ``holes''in contiguous chunks of memory that are not used by the program.
 
-__4. Minimizing Time:__
+_4. Minimizing Time:_
 
 The malloc(), free() and realloc routines should be as fast as possible in the average case.
 
-__5. Maximizing Tunability:__
+_5. Maximizing Tunability:_
 Optional features and behavior should be controllable by users either statically (via #define and the like) or dynamically (via control commands such as mallopt).
 
-__6. Maximizing Locality:__
+_6. Maximizing Locality:_
 
 Allocating chunks of memory that are typically used together near each other. This helps minimize page and cache misses during program execution.
 
-__7. Maximizing Error Detection:__
+_7. Maximizing Error Detection:_
 
 It does not seem possible for a general-purpose allocator to also serve as general-purpose memory error testing tool such as Purify. However, allocators should provide some means for detecting corruption due to overwriting memory, multiple frees, and so on.
 
-__8. Minimizing Anomalies:__
+_8. Minimizing Anomalies:_
 
 An allocator configured using default settings should perform well across a wide range of real loads that depend heavily on dynamic allocation -- windowing toolkits, GUI applications, compilers, interpretors, development tools, network (packet)-intensive programs, graphics-intensive packages, web browsers, string-processing applications, and so on.
+
+#### __3.3 Layered Data Structure__
+To achieve the above goals, a layered data sturcture is designed trying to cover all the aspect mentioned above:
+![avatar](assets/Structure_of_Malloc.png)
+
+#### __3.3.1 Arenas__
+Arena is a structure designed to reduce the use of lock in multi-threading sccenario. Arenas are linked in a cyclic list, when requesting memory, the thread will try to acquire the lock of a certain arena. If this process fails, the thread will traverse the list trying to find a arena that is not locked. It no such arena can be found, a new arena is created and added to the list. Main Arena (the one that spawned with the process) can call both `sbrk` and `mmap`. However, Non-Main Arena can only call `mmap` to acquire memory.
+#### __3.3.2 Bins__
+A single Bin can be think of as the structure we used in our implementation. The difference is that each bin only hold memory block of a certain type or certain size rather than putting them all in a single list.
+Bins are categorized into several types, more specifically _small bins_, _large bins_, _unsorted bins_ and _fast bins_.
+
+
+_Small bins_ and _large bins_ are relatively simple. _Small bins_ only store chunks of a certain size, each bin differ in size by 8bytes. _Large bins_ stores larget chunks and chunk in a particular size range is stored in each bin. 
+
+_Fast bins_ and _unsorted bins_ functions like a buffer to  _small bins_ and _large bins_ respectively. When trying to assign a memory, the requested size is first compared with upper size limit of fast bins. Only if the size exceed this limit or no suitable chunk is found in _fast bin_, the search go to _small bin_.
+
+If suitable chunk is not found in _small bins_, the chunks in _fast bins_ is merged and moved to _unsorted bin_. The search now starts in _unsorted bin_. Chunks conforming to size of _small & large bins_ are moved into such bins. If still no suitable chunks found, the search starts in _large bins_. Finally, if still no match found, use top chunk or other mechanism to handle memory allocation(covered later).
+
+#### __3.3.3 Chunks__
+Chunk is analogous to the block we designed in our implementation. The difference is that chunks have more field to distinguish between different state of a chunk and to find other chunks easier:
+<center>Chunk in-use</center>
+
+![avatar](assets/Chunk_inUse.png)
+
+<center>Free Chunk</center>
+
+![avatar](assets/Chunk_free.png)
+
+Among all the field, __A__ indicate whether chunk is in main arena; __M__ indicate whether chunk is acquired through `mmap`; __P__ indicate whether this chunk is the first in its been(no previous chunk). All the other fields are pretty self-explanatory.
+
+#### __3.4 Summary of Data Structure__
+As we can see, the glibc malloc/free utilized a much more sophisticated sturcture to do memory management and assignment. With a layered a sturcture and a cache structure, each request size range have a structure designed for it, making it less likely to generate segmented memory; at the same time, the cache (fast-bins) make sure we do not release the memory everytime a chunk is freed, making it faster for the overall memory allocation process. 
+
