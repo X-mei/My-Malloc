@@ -141,3 +141,96 @@ Among all the field, __A__ indicate whether chunk is in main arena; __M__ indica
 #### __3.4 Summary of Data Structure__
 As we can see, the glibc malloc/free utilized a much more sophisticated sturcture to do memory management and assignment. With a layered a sturcture and a cache structure, each request size range have a structure designed for it, making it less likely to generate segmented memory; at the same time, the cache (fast-bins) make sure we do not release the memory everytime a chunk is freed, making it faster for the overall memory allocation process. 
 
+#### __3.5 Source Code__
+#### __3.5.1 Boundary Alignment__
+Macro definition is widely used to handle the case of running on different operating system and speed up simple calculation involved in all processes. For the basic chunk alignment:
+```C
+#ifndef INTERNAL_SIZE_T
+// the size_t vary from platform to platform
+#define INTERNAL_SIZE_T size_t
+#endif
+/* The corresponding word size */
+#define SIZE_SZ (sizeof(INTERNAL_SIZE_T))
+/*
+ MALLOC_ALIGNMENT is the minimum alignment for malloc'ed chunks.
+ It must be a power of two at least 2 * SIZE_SZ, even on machines
+ for which smaller alignments would suffice. It may be defined as
+ larger than this though. Note however that code and data structures
+ are optimized for the case of 8-byte alignment.
+*/
+#ifndef MALLOC_ALIGNMENT
+#define MALLOC_ALIGNMENT (2 * SIZE_SZ)
+#endif
+/* The corresponding bit mask value */
+#define MALLOC_ALIGN_MASK (MALLOC_ALIGNMENT - 1)
+```
+Conversion from chunk pointer to pointer to usable memory and vice-versa; The minimum size of a chunk.
+```C
+/* conversion from malloc headers to user pointers, and back */
+#define chunk2mem(p) ((Void_t*)((char*)(p) + 2*SIZE_SZ))
+#define mem2chunk(mem) ((mchunkptr)((char*)(mem) - 2*SIZE_SZ))
+/* The smallest possible chunk */
+#define MIN_CHUNK_SIZE (offsetof(struct malloc_chunk, fd_nextsize))
+/* The smallest size we can malloc is an aligned minimal chunk */
+#define MINSIZE \
+ (unsigned long)(((MIN_CHUNK_SIZE+MALLOC_ALIGN_MASK) & ~MALLOC_ALIGN_MASK))
+/* Check if m has acceptable alignment */
+#define aligned_OK(m) (((unsigned long)(m) & MALLOC_ALIGN_MASK) == 0)
+#define misaligned_chunk(p) \ ((uintptr_t)(MALLOC_ALIGNMENT == 2 * SIZE_SZ ? (p) : chunk2mem (p)) \& MALLOC_ALIGN_MASK)
+```
+Convert the User requested size to the size of chunk to locate.
+```C
+/*
+   Check if a request is so large that it would wrap around zero when
+   padded and aligned. To simplify some other code, the bound is made
+   low enough so that adding MINSIZE will also not wrap around zero.
+ */
+#define REQUEST_OUT_OF_RANGE(req)                                 \
+  ((unsigned long) (req) >=                                                      \
+   (unsigned long) (INTERNAL_SIZE_T) (-2 * MINSIZE))
+/* pad request bytes into a usable size -- internal version */
+#define request2size(req)                                         \
+  (((req) + SIZE_SZ + MALLOC_ALIGN_MASK < MINSIZE)  ?             \
+   MINSIZE :                                                      \
+   ((req) + SIZE_SZ + MALLOC_ALIGN_MASK) & ~MALLOC_ALIGN_MASK)
+/* Same, except also perform an argument and result check.  First, we check
+   that the padding done by request2size didn't result in an integer
+   overflow.  Then we check (using REQUEST_OUT_OF_RANGE) that the resulting
+   size isn't so large that a later alignment would lead to another integer
+   overflow.  */
+#define checked_request2size(req, sz) \
+({                                    \
+  (sz) = request2size (req);            \
+  if (((sz) < (req))                    \
+      || REQUEST_OUT_OF_RANGE (sz)) \
+    {                                    \
+      __set_errno (ENOMEM);            \
+      return 0;                            \
+    }                                    \
+})
+```
+Get the __A M P__ status bit we discussed in previous section.
+```C
+// P
+/* size field is or'ed with PREV_INUSE when previous adjacent chunk in use */
+#define PREV_INUSE 0x1
+/* extract inuse bit of previous chunk */
+#define prev_inuse(p)       ((p)->mchunk_size & PREV_INUSE)
+
+// M
+/* size field is or'ed with IS_MMAPPED if the chunk was obtained with mmap() */
+#define IS_MMAPPED 0x2
+/* check for mmap()'ed chunk */
+#define chunk_is_mmapped(p) ((p)->mchunk_size & IS_MMAPPED)
+
+// A
+/* size field is or'ed with NON_MAIN_ARENA if the chunk was obtained
+   from a non-main arena.  This is only set immediately before handing
+   the chunk to the user, if necessary.  */
+#define NON_MAIN_ARENA 0x4
+/* Check for chunk from main arena.  */
+#define chunk_main_arena(p) (((p)->mchunk_size & NON_MAIN_ARENA) == 0)
+/* Mark a chunk as not being on the main arena.  */
+#define set_non_main_arena(p) ((p)->mchunk_size |= NON_MAIN_ARENA)
+```
+
