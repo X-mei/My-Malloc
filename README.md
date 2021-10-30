@@ -66,7 +66,7 @@ Based on the results, there is no evident difference between two versions on the
 
 ### __3 Glibc version of malloc/free(used in Most Opreating System)__
 #### __3.1 Basic Performance Metrics of standard library malloc/free__
-To further explore this topic, I decided to look into the source code of the malloc/free library used to do memory management in real operating system. I started by running some test using this particular malloc/free. It turns out the result is much better than I expected:
+To further explore this topic, I decided to look into the source code of the malloc/free library used to do memory management in real operating system. I started by running some test using malloc/free on a linux environment. It turns out the result is much better than I expected:
 |Version|Locking|No Lock|Glibc|
 |:-|:-|:-|:-|
 |Average Time Took|1.478|0.303|0.027|
@@ -75,7 +75,7 @@ To further explore this topic, I decided to look into the source code of the mal
 At that time my understanding of the standard malloc/free library is that it do not differ much from our implementation. That is, we all used a list sturcture to manage the memory, used some traversing algorithm to find the fitting block to assign. The only two difference that I could think of is the actual malloc uses `mmap` instead of `sbrk` when the size required exceed certain threshold and maybe some difference in how the thread-safe portion is implemented. But it turns out the difference is actually huge.
 
 #### __3.2 Basic design Goals__
-According to Doug Lea, the person who wrote this version of malloc/free. There are several goals to meet when designing a good memory management library:
+According to Doug Lea, the person who wrote the first version of dlmalloc. There are several goals to meet when designing a good memory management library:
 
 _1. Maximizing Compatibility:_
 
@@ -110,7 +110,7 @@ _8. Minimizing Anomalies:_
 An allocator configured using default settings should perform well across a wide range of real loads that depend heavily on dynamic allocation -- windowing toolkits, GUI applications, compilers, interpretors, development tools, network (packet)-intensive programs, graphics-intensive packages, web browsers, string-processing applications, and so on.
 
 #### __3.3 Layered Data Structure__
-To achieve the above goals, a layered data sturcture is designed trying to cover all the aspect mentioned above:
+This version of malloc is called ptmalloc and is a heap style malloc as opposed to implementations that uses bitsmap and arrays. To achieve the above goals, a layered data sturcture is designed trying to cover all the aspect mentioned above:
 ![avatar](assets/Structure_of_Malloc.png)
 
 #### __3.3.1 Arenas__
