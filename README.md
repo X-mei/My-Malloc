@@ -110,7 +110,7 @@ _8. Minimizing Anomalies:_
 An allocator configured using default settings should perform well across a wide range of real loads that depend heavily on dynamic allocation -- windowing toolkits, GUI applications, compilers, interpretors, development tools, network (packet)-intensive programs, graphics-intensive packages, web browsers, string-processing applications, and so on.
 
 #### __3.3 Layered Data Structure__
-This version of malloc is called ptmalloc and is a heap style malloc as opposed to implementations that uses bitsmap and arrays. To achieve the above goals, a layered data sturcture is designed trying to cover all the aspect mentioned above:
+This version of malloc is called ptmalloc (a later version of dlmalloc) and is a heap style malloc as opposed to implementations that uses bitsmap and arrays. To achieve the above goals, a layered data sturcture is designed trying to cover all the aspect mentioned above:
 ![avatar](assets/Structure_of_Malloc.png)
 
 #### __3.3.1 Arenas__
